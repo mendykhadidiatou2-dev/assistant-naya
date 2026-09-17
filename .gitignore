@@ -1,0 +1,10 @@
+@"
+.env
+secrets/
+data/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+"@ | Set-Content -Encoding utf8 .gitignore
