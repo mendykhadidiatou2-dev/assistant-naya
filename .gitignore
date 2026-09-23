@@ -8,3 +8,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 "@ | Set-Content -Encoding utf8 .gitignore
+Release-26.09.0-0/
+Release-26.09.0-0/
+data/documents_ecartes/
