@@ -1,12 +1,16 @@
 import logging
+import os
+import time
+from venv import logger
 
-import ollama
+from groq import Groq
+from dotenv import load_dotenv
 
 from src.rag.vectorstore import chercher
 
-logger = logging.getLogger(__name__)
-
-NOM_LLM = "llama3.1:8b"
+load_dotenv()
+client_groq = Groq(api_key=os.environ["GROQ_API_KEY"])
+NOM_LLM = "openai/gpt-oss-120b"
 
 PROMPT_SYSTEME = """Tu es un assistant personnel qui aide à retrouver des informations \
 dans des documents administratifs.
@@ -32,20 +36,23 @@ def construire_prompt_utilisateur(question: str, chunks: list[dict]) -> str:
 
 def repondre(question: str, k: int = 4) -> str:
     """Cherche les chunks, construit le prompt, interroge le LLM, renvoie la réponse."""
-    chunks = chercher(question, k=k)
+    chunks = chercher(question, k=3)
     for c in chunks:
         print(f"  [reçu] {c['meta']['source']} p.{c['meta']['page']}")
     prompt_utilisateur = construire_prompt_utilisateur(question, chunks)
 
-    reponse = ollama.chat(
+    debut = time.time()
+    reponse = client_groq.chat.completions.create(
         model=NOM_LLM,
         messages=[
             {"role": "system", "content": PROMPT_SYSTEME},
             {"role": "user", "content": prompt_utilisateur},
         ],
-        options={"temperature": 0.1},   # basse : factuel, pas de créativité
+        temperature=0.1,
     )
-    return reponse["message"]["content"]
+    duree = time.time() - debut
+    logger.info("Réponse générée en %.1f secondes", duree)
+    return reponse.choices[0].message.content
 
 
 if __name__ == "__main__":

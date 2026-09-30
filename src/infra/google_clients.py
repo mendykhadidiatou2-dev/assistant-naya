@@ -12,3 +12,7 @@ def client_calendar():
         credentials=obtenir_credentials(),
         cache_discovery=False,
     )
+
+@lru_cache(maxsize=None)
+def client_gmail():
+    return build("gmail", "v1", credentials=obtenir_credentials(), cache_discovery=False)

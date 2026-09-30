@@ -1,0 +1,157 @@
+import json
+import logging
+import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from dotenv import load_dotenv
+from groq import Groq
+
+from src.rag.vectorstore import chercher
+from src.tools.calendar import lire_agenda
+from src.tools.gmail import lister_mails
+
+load_dotenv()
+logger = logging.getLogger(__name__)
+client_groq = Groq(api_key=os.environ["GROQ_API_KEY"])
+NOM_LLM = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+FUSEAU = ZoneInfo("Europe/Paris")
+
+# ---------- Les 3 outils, décrits pour le LLM ----------
+OUTILS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "chercher_documents",
+            "description": (
+                "Recherche dans les documents administratifs personnels archivés "
+                "(attestations, contrats, titre de séjour, assurance). "
+                "À utiliser pour toute question sur un papier officiel. "
+                "NE PAS utiliser pour les mails ni pour l'agenda."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "La question à chercher dans les documents"}
+                },
+                "required": ["question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "lire_agenda",
+            "description": (
+                "Lit les événements de l'agenda (cours, rendez-vous) sur les prochains jours. "
+                "À utiliser pour toute question sur le planning, l'emploi du temps, les cours à venir. "
+                "NE PAS utiliser pour les mails ni les documents."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "jours": {"type": "integer", "description": "Nombre de jours à regarder (défaut 7)"}
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "lister_mails",
+            "description": (
+                "Liste les e-mails selon une requête Gmail (ex: 'is:unread newer_than:7d'). "
+                "À utiliser pour toute question sur les mails, messages non lus, courriers reçus. "
+                "NE PAS utiliser pour l'agenda ni les documents."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "requete": {"type": "string", "description": "Requête Gmail, ex: 'is:unread'"}
+                },
+            },
+        },
+    },
+]
+
+
+# ---------- Exécuter réellement un outil ----------
+def executer_outil(nom: str, arguments: dict) -> str:
+    """TON CODE exécute l'outil que le LLM a demandé, et renvoie le résultat en texte."""
+    logger.info("Outil appelé : %s(%s)", nom, arguments)
+
+    if nom == "chercher_documents":
+        chunks = chercher(arguments["question"], k=3)
+        return "\n\n".join(c["texte"] for c in chunks)
+
+    if nom == "lire_agenda":
+        jours = arguments.get("jours", 7)
+        evenements = lire_agenda(jours=jours)
+        if not evenements:
+            return "Aucun événement dans cette période."
+        return "\n".join(e.resume() for e in evenements)
+
+    if nom == "lister_mails":
+        requete = arguments.get("requete", "is:unread newer_than:7d")
+        mails = lister_mails(requete, limite=5)
+        if not mails:
+            return "Aucun mail trouvé."
+        return "\n".join(
+            f"De {m['expediteur']} — {m['objet']} : {m['apercu']}" for m in mails
+        )
+
+    return "Outil inconnu."
+
+
+PROMPT_SYSTEME = """Tu es Naya, une assistante personnelle en français.
+Tu as accès à trois outils : les documents administratifs, l'agenda, et les mails.
+Choisis le bon outil selon la question, puis réponds clairement à partir du résultat.
+Si l'information n'est pas disponible, dis-le honnêtement. Ne devine jamais.
+La date du jour est {date}."""
+
+
+def repondre_agent(question: str, max_iterations: int = 5) -> str:
+    """La boucle agent : le LLM choisit ses outils jusqu'à pouvoir répondre."""
+    messages = [
+        {"role": "system", "content": PROMPT_SYSTEME.format(date=datetime.now(FUSEAU).strftime("%A %d %B %Y"))},
+        {"role": "user", "content": question},
+    ]
+
+    for tour in range(max_iterations):
+        reponse = client_groq.chat.completions.create(
+            model=NOM_LLM,
+            messages=messages,
+            tools=OUTILS,
+            temperature=0.1,
+        )
+        message = reponse.choices[0].message
+
+        # Si le LLM ne demande aucun outil, c'est qu'il a sa réponse finale
+        if not message.tool_calls:
+            return message.content
+
+        # Sinon, on exécute les outils demandés
+        messages.append(message)
+        for appel in message.tool_calls:
+            nom = appel.function.name
+            arguments = json.loads(appel.function.arguments)
+            resultat = executer_outil(nom, arguments)
+            messages.append({
+                "role": "tool",
+                "tool_call_id": appel.id,
+                "content": resultat,
+            })
+
+    return "Je n'ai pas réussi à répondre après plusieurs tentatives."
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    questions = [
+        "quand se termine mon titre de séjour ?",
+        "quels sont mes cours cette semaine ?",
+        "ai-je des mails non lus ?",
+    ]
+    for q in questions:
+        print(f"\n{'='*60}\nQUESTION : {q}\n{'='*60}")
+        print(repondre_agent(q))

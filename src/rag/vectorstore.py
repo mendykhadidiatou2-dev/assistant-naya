@@ -20,6 +20,8 @@ def charger_modele() -> SentenceTransformer:
     return SentenceTransformer(NOM_MODELE)
 
 
+
+
 @lru_cache(maxsize=None)
 def obtenir_collection():
     """Ouvre (ou crée) la collection ChromaDB, stockée sur le disque."""

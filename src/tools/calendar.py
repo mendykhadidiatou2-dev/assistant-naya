@@ -32,23 +32,40 @@ def _parser_evenement(brut: dict) -> Evenement:
 
 
 def lire_agenda(jours: int = 7, limite: int = 20) -> list[Evenement]:
+    """Partie IMPURE : lit les événements de TOUS les agendas (principal + abonnements iCal)."""
+    service = client_calendar()
     maintenant = datetime.now(FUSEAU)
-    reponse = (
-        client_calendar()
-        .events()
-        .list(
-            calendarId="primary",
-            timeMin=maintenant.isoformat(),
-            timeMax=(maintenant + timedelta(days=jours)).isoformat(),
-            maxResults=limite,
-            singleEvents=True,
-            orderBy="startTime",
+    fin = maintenant + timedelta(days=jours)
+
+    # 1. Récupérer la liste de TOUS les agendas (principal + Ynov + autres)
+    liste_agendas = service.calendarList().list().execute().get("items", [])
+
+    tous_evenements: list[Evenement] = []
+
+    # 2. Pour chaque agenda, récupérer ses événements
+    for agenda in liste_agendas:
+        agenda_id = agenda["id"]
+        reponse = (
+            service.events()
+            .list(
+                calendarId=agenda_id,
+                timeMin=maintenant.isoformat(),
+                timeMax=fin.isoformat(),
+                maxResults=limite,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
         )
-        .execute()
-    )
-    bruts = reponse.get("items", [])
-    logger.info("Agenda : %d evenements recuperes sur %d jours", len(bruts), jours)
-    return [_parser_evenement(e) for e in bruts]
+        bruts = reponse.get("items", [])
+        tous_evenements.extend(_parser_evenement(e) for e in bruts)
+
+    # 3. Trier tous les événements par date de début
+    tous_evenements.sort(key=lambda e: e.debut)
+    logger.info("Agenda : %d événements récupérés sur %d jours (%d agendas)",
+                len(tous_evenements), jours, len(liste_agendas))
+    return tous_evenements
+
 
 
 if __name__ == "__main__":
