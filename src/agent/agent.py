@@ -5,18 +5,22 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from groq import Groq
+from openai import OpenAI
 
 from src.rag.vectorstore import chercher
 from src.tools.calendar import lire_agenda
 from src.tools.gmail import lister_mails
 
 load_dotenv()
-logger = logging.getLogger(__name__)
-client_groq = Groq(api_key=os.environ["GROQ_API_KEY"])
-NOM_LLM = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
-FUSEAU = ZoneInfo("Europe/Paris")
 
+logger = logging.getLogger(__name__)
+
+client_llm = OpenAI(
+    api_key=os.getenv("GEMINI_API_KEY"),
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+)
+NOM_LLM = "gemini-2.5-flash"   # recopie le nom exact de ta liste
+FUSEAU = ZoneInfo("Europe/Paris")
 # ---------- Les 3 outils, décrits pour le LLM ----------
 OUTILS = [
     {
@@ -118,7 +122,7 @@ def repondre_agent(question: str, max_iterations: int = 5) -> str:
     ]
 
     for tour in range(max_iterations):
-        reponse = client_groq.chat.completions.create(
+        reponse = client_llm.chat.completions.create(
             model=NOM_LLM,
             messages=messages,
             tools=OUTILS,

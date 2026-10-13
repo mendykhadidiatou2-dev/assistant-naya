@@ -9,3 +9,6 @@ __pycache__/
 Release-26.09.0-0/
 data/documents_ecartes/
 assets/naya.png
+*.log
+token.json
+credentials.json
