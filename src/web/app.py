@@ -409,13 +409,18 @@ for message in st.session_state.messages:
 question = st.chat_input("Pose une question a Naya... \U0001F4AD")
 
 if question:
+    # ← NOUVEAU : on prend le carnet AVANT d'y ajouter la question
+    #   [1:]  saute le message de bienvenue
+    #   [-10:] garde seulement les 10 derniers messages (économie de tokens)
+    historique = st.session_state.messages[1:][-10:]
+
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user", avatar="\U0001F9D5\U0001F3FE"):
         st.markdown(question)
 
     with st.chat_message("assistant", avatar=AVATAR_CHAT):
         with st.spinner("Naya reflechit... \u2728"):
-            reponse = repondre(question)
+            reponse = repondre(question, historique=historique)   # ← NOUVEAU : on envoie le carnet
         st.markdown(reponse)
 
     st.session_state.messages.append({"role": "assistant", "content": reponse})
